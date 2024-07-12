@@ -1,1 +1,1 @@
-### Я не знаю что писать
+A Lua script that generates a map for a "hexWorld" designed for tabletop role-playing games (TTRPGs).
