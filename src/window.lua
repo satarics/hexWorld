@@ -37,7 +37,7 @@ function window.init()
         ivec = {x = math.sqrt(3)/2, y = 1/2}, -- Вектор направления вправо-вверх
         jvec = {x = 0, y = 1}, -- Вектор направления вниз
     
-        gridSize = 65, -- Размер сетки
+        gridSize = 267, -- Размер сетки
 
         bufferFactor = 2, -- Размер буффура экрана
         bufferClarity = 2, -- Множитель разрешения буффера экрана
@@ -191,7 +191,7 @@ function window.draw(state)
 
     if state.reRender then
         rl.BeginTextureMode(state.buffer)
-            rl.ClearBackground(rl.BLACK)
+            rl.ClearBackground(rl.WHITE)
             rl.BeginMode2D(state.bufferCamera)
                 drawColoredMap(state.map)
             rl.EndMode2D()
@@ -201,7 +201,7 @@ function window.draw(state)
     end
 
     rl.BeginDrawing()
-        rl.ClearBackground(rl.BLACK)
+        rl.ClearBackground(rl.WHITE)
 
         rl.BeginMode2D(state.camera)
             local source = rl.new("Rectangle", 0, 0, state.buffer.texture.width, -state.buffer.texture.height)

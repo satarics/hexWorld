@@ -361,7 +361,7 @@ function worldgen.generateWorld(settings)
                         local targetLevel = height[index]
                         
                         local queue = {}; table.insert(queue, index)
-                        local visited = {}
+                        local visited = {}; table.insert(visited, index)
 
                         while #queue > 0 do
                             local currentCell = table.remove(queue, 1)
