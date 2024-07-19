@@ -39,15 +39,7 @@ function window.init()
     
         gridSize = 267, -- Размер сетки
 
-        bufferFactor = 2, -- Размер буффура экрана
-        bufferClarity = 2, -- Множитель разрешения буффера экрана
-
         run = true,
-
-        reRender = true, -- Требуется ли перерисовка буффера
-        reSizeBuffer = false, -- Требуется ли обновить буффер
-
-        wasWindowResized = false,
     }
     state.drawSizeGrid = (state.sizeGrid / math.sqrt(3)) -- Размер ячеек
 
@@ -63,93 +55,98 @@ function window.init()
         rotation = 0,
         zoom = 1
     })
-    
-    state.bufferCamera = rl.new("Camera2D", {
-        offset = rl.new("Vector2", 0, 0),
-        target = rl.new("Vector2", 0, 0),
-        rotation = 0,
-        zoom = 1
-    })
 
     rl.SetConfigFlags(rl.FLAG_VSYNC_HINT)
     rl.InitWindow(state.screenWidth, state.screenHeight, "Hex World")
     rl.SetTargetFPS(120)
 
-    state.buffer = rl.LoadRenderTexture(state.screenWidth * state.bufferFactor * state.bufferClarity, state.screenHeight * state.bufferFactor * state.bufferClarity)
+    -- Фаблица функций поддреживающих буффер
+    local function bufferFabricDraw(drawFunc, Factor, Clarity)
+        local bufferCamera = rl.new("Camera2D", {
+            offset = rl.new("Vector2", 0, 0),
+            target = rl.new("Vector2", 0, 0),
+            rotation = 0,
+            zoom = 1
+        })
 
-    return state
-end
+        local reRender = true -- Требуется ли перерисовка буффера
+        local reSizeBuffer = true -- Требуется ли обновить буффер
+        local wasWindowResized = false -- Был ли изменён размер окна в прошлом кадре
 
-function window.update(state)
+        local bufferFactor = Factor or 3 -- Размер буффура экрана
+        local bufferClarity = Clarity or 3 -- Множитель разрешения буффера экрана
 
-    -- Закрвтие окна
-    if rl.WindowShouldClose() then
-        state.run = false
-    end
-    
-    -- Управление камерой
-    if rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) then
-        local delta = rl.GetMouseDelta()
-        delta = rl.Vector2Scale(delta, -1 / state.camera.zoom)
-        state.camera.target = rl.Vector2Add(state.camera.target, delta)
-    end
+        local buffer = rl.LoadRenderTexture(0, 0)
 
-    -- Приближение отдалене
-    local wheel = rl.GetMouseWheelMove()
-    if wheel ~= 0 then
-        local mousePos = rl.GetMousePosition()
-        local mouseWorldPos = rl.GetScreenToWorld2D(mousePos, state.camera)
-        state.camera.offset = mousePos
-        state.camera.target = mouseWorldPos
-        local scaleFactor = 1 + (0.1 * math.abs(wheel))
-        if wheel < 0 then
-            scaleFactor = 1 / scaleFactor
+        return function (state)   
+            -- Проверка на изменение размера экрана 
+            if rl.IsWindowResized() and not wasWindowResized then -- Изменяется ли сеё час экран
+                wasWindowResized = true
+            elseif not rl.IsWindowResized() and wasWindowResized then -- Закончл ли он изменение
+                reSizeBuffer = true
+                wasWindowResized = false
+                reRender = true
+
+                state.screenWidth, state.screenHeight = rl.GetScreenWidth(), rl.GetScreenHeight()
+            end
+
+            -- Обноаляем размер буффера
+            if reSizeBuffer then
+                rl.UnloadRenderTexture(buffer)
+                buffer = rl.LoadRenderTexture(state.screenWidth * bufferFactor * bufferClarity, state.screenHeight * bufferFactor * bufferClarity)
+
+                reSizeBuffer = false
+            end
+
+            -- Проверка на обновление буффера
+            local worldMin = rl.GetScreenToWorld2D(rl.new("Vector2", 0, 0), state.camera)
+            local worldMax = rl.GetScreenToWorld2D(rl.new("Vector2", state.screenWidth, state.screenHeight), state.camera)
+
+            local bufferMin = rl.GetScreenToWorld2D(rl.new("Vector2", 0, 0), bufferCamera)
+            local bufferMax = rl.GetScreenToWorld2D(rl.new("Vector2", state.screenWidth * bufferFactor * bufferClarity, state.screenHeight * bufferFactor * bufferClarity), bufferCamera)
+            local bufferSize = rl.Vector2Subtract(bufferMax, bufferMin)
+            local bufferPos = bufferMin
+
+            if worldMin.x < bufferMin.x or worldMin.y < bufferMin.y or 
+            worldMax.x > bufferMax.x or worldMax.y > bufferMax.y or
+            state.camera.zoom > bufferCamera.zoom
+            then
+                reRender = true
+
+                bufferCamera.offset = rl.Vector2Scale(state.camera.offset, bufferFactor * bufferClarity)
+                bufferCamera.target = rl.Vector2Scale(state.camera.target, 1)
+                bufferCamera.zoom = state.camera.zoom * bufferClarity
+            end
+
+            print(reRender, reSizeBuffer, wasWindowResized)
+
+            -- РИСОВАНИЕ 
+
+            if reRender then
+                rl.BeginTextureMode(buffer)
+                    rl.ClearBackground(rl.WHITE)
+                    rl.BeginMode2D(bufferCamera)
+                        drawFunc(state.map)
+                    rl.EndMode2D()
+                rl.EndTextureMode()
+        
+                reRender = false
+            end
+        
+            rl.BeginDrawing()
+                rl.ClearBackground(rl.WHITE)
+        
+                rl.BeginMode2D(state.camera)
+                    local source = rl.new("Rectangle", 0, 0, buffer.texture.width, -buffer.texture.height)
+                    local dest = rl.new("Rectangle", bufferPos.x, bufferPos.y, bufferSize.x, bufferSize.y)
+                    rl.DrawTexturePro(buffer.texture, source, dest, rl.Vector2Zero(), 0, rl.WHITE)
+                rl.EndMode2D()
+        
+                rl.DrawFPS(0, 0)
+            rl.EndDrawing()
+            
         end
-        state.camera.zoom = rl.Clamp(state.camera.zoom * scaleFactor, 0.001, 100)
     end
-
-    -- Проверка на изменение размера экрана 
-    if rl.IsWindowResized() and not state.wasWindowResized then -- Изменяется ли сеё час экран
-        state.wasWindowResized = true
-    elseif not rl.IsWindowResized() and state.wasWindowResized then -- Закончл ли он изменение
-        state.reSizeBuffer = true
-        state.wasWindowResized = false
-        state.reRender = true
-
-        state.screenWidth, state.screenHeight = rl.GetScreenWidth(), rl.GetScreenHeight()
-    end
-
-    -- Обноаляем размер буффера
-    if state.reSizeBuffer then
-        rl.UnloadRenderTexture(state.buffer)
-        state.buffer = rl.LoadRenderTexture(state.screenWidth * state.bufferFactor * state.bufferClarity, state.screenHeight * state.bufferFactor * state.bufferClarity)
-
-        state.reSizeBuffer = false
-    end
-
-    -- Проверка на обновление буффера
-    local worldMin = rl.GetScreenToWorld2D(rl.new("Vector2", 0, 0), state.camera)
-    local worldMax = rl.GetScreenToWorld2D(rl.new("Vector2", state.screenWidth, state.screenHeight), state.camera)
-
-    local bufferMin = rl.GetScreenToWorld2D(rl.new("Vector2", 0, 0), state.bufferCamera)
-    local bufferMax = rl.GetScreenToWorld2D(rl.new("Vector2", state.screenWidth * state.bufferFactor * state.bufferClarity, state.screenHeight * state.bufferFactor * state.bufferClarity), state.bufferCamera)
-    state.bufferSize = rl.Vector2Subtract(bufferMax, bufferMin)
-    state.bufferPos = bufferMin
-
-    if worldMin.x < bufferMin.x or worldMin.y < bufferMin.y or 
-       worldMax.x > bufferMax.x or worldMax.y > bufferMax.y or
-       state.camera.zoom > state.bufferCamera.zoom
-    then
-        state.reRender = true
-
-        state.bufferCamera.offset = rl.Vector2Scale(state.camera.offset, state.bufferFactor * state.bufferClarity)
-        state.bufferCamera.target = rl.Vector2Scale(state.camera.target, 1)
-        state.bufferCamera.zoom = state.camera.zoom * state.bufferClarity
-    end
-
-end
-
-function window.draw(state)
 
     -- Функция для рисования шестиугольника
     local function drawHexagon(centerX, centerY, biomeColor, mountainColor, featureColor)
@@ -212,28 +209,41 @@ function window.draw(state)
         end
     end
 
-    if state.reRender then
-        rl.BeginTextureMode(state.buffer)
-            rl.ClearBackground(rl.WHITE)
-            rl.BeginMode2D(state.bufferCamera)
-                drawColoredMap(state.map)
-            rl.EndMode2D()
-        rl.EndTextureMode()
+    state.drawFunc = bufferFabricDraw(drawColoredMap, 2, 2)
 
-        state.reRender = false
+    return state
+end
+
+function window.cycle(state)
+    state.screenWidth, state.screenHeight = rl.GetScreenWidth(), rl.GetScreenHeight()
+
+    -- Закрвтие окна
+    if rl.WindowShouldClose() then
+        state.run = false
+    end
+    
+    -- Управление камерой
+    if rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) then
+        local delta = rl.GetMouseDelta()
+        delta = rl.Vector2Scale(delta, -1 / state.camera.zoom)
+        state.camera.target = rl.Vector2Add(state.camera.target, delta)
     end
 
-    rl.BeginDrawing()
-        rl.ClearBackground(rl.WHITE)
+    -- Приближение отдалене
+    local wheel = rl.GetMouseWheelMove()
+    if wheel ~= 0 then
+        local mousePos = rl.GetMousePosition()
+        local mouseWorldPos = rl.GetScreenToWorld2D(mousePos, state.camera)
+        state.camera.offset = mousePos
+        state.camera.target = mouseWorldPos
+        local scaleFactor = 1 + (0.1 * math.abs(wheel))
+        if wheel < 0 then
+            scaleFactor = 1 / scaleFactor
+        end
+        state.camera.zoom = rl.Clamp(state.camera.zoom * scaleFactor, 0.001, 100)
+    end
 
-        rl.BeginMode2D(state.camera)
-            local source = rl.new("Rectangle", 0, 0, state.buffer.texture.width, -state.buffer.texture.height)
-            local dest = rl.new("Rectangle", state.bufferPos.x, state.bufferPos.y, state.bufferSize.x, state.bufferSize.y)
-            rl.DrawTexturePro(state.buffer.texture, source, dest, rl.Vector2Zero(), 0, rl.WHITE)
-        rl.EndMode2D()
-
-        rl.DrawFPS(0, 0)
-    rl.EndDrawing()
+    state.drawFunc(state)
 
 end
 
