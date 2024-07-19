@@ -44,7 +44,10 @@ function window.init()
 
         run = true,
 
-        reRender = true -- Требуется ли перерисовка буффера
+        reRender = true, -- Требуется ли перерисовка буффера
+        reSizeBuffer = false, -- Требуется ли обновить буффер
+
+        wasWindowResized = false,
     }
     state.drawSizeGrid = (state.sizeGrid / math.sqrt(3)) -- Размер ячеек
 
@@ -79,6 +82,7 @@ end
 
 function window.update(state)
 
+    -- Закрвтие окна
     if rl.WindowShouldClose() then
         state.run = false
     end
@@ -102,6 +106,25 @@ function window.update(state)
             scaleFactor = 1 / scaleFactor
         end
         state.camera.zoom = rl.Clamp(state.camera.zoom * scaleFactor, 0.001, 100)
+    end
+
+    -- Проверка на изменение размера экрана 
+    if rl.IsWindowResized() and not state.wasWindowResized then -- Изменяется ли сеё час экран
+        state.wasWindowResized = true
+    elseif not rl.IsWindowResized() and state.wasWindowResized then -- Закончл ли он изменение
+        state.reSizeBuffer = true
+        state.wasWindowResized = false
+        state.reRender = true
+
+        state.screenWidth, state.screenHeight = rl.GetScreenWidth(), rl.GetScreenHeight()
+    end
+
+    -- Обноаляем размер буффера
+    if state.reSizeBuffer then
+        rl.UnloadRenderTexture(state.buffer)
+        state.buffer = rl.LoadRenderTexture(state.screenWidth * state.bufferFactor * state.bufferClarity, state.screenHeight * state.bufferFactor * state.bufferClarity)
+
+        state.reSizeBuffer = false
     end
 
     -- Проверка на обновление буффера
